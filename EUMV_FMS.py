@@ -1,4 +1,3 @@
-# Set a different master seed each time the program runs
 import time
 import simpy
 import numpy as np
@@ -70,7 +69,6 @@ class ManufacturingFacility:
             delay = self.env.now - self.last_product_time - process_time
             if delay > 0:
                 self.metrics[station_id].bottleneck_delays.append(delay)
-                # self.metrics['worst_bottleneck'] = station_id
         self.last_product_time = self.env.now
 
     def process_product(self, product_id):
@@ -119,17 +117,12 @@ class ManufacturingFacility:
         else:
             self.total_production += 1
 
-    def run_simulation(self, run_id):
+    def run_simulation(self, run_id, simulation_time):
         product_id = 0
-        while self.env.now < 5000:
-            if np.random.random() < 0.0001 / (5000 / 24):   # Facility accident
+        while self.env.now < simulation_time:
+            if np.random.random() < 0.0001 / (simulation_time / 24):   # Facility accident
                 print(f"Facility accident at time {self.env.now} in Run {run_id}. Stopping this simulation run.")
                 break
-            
-            #Challenge 1, fluctuating demand
-            # if np.random.random() < 0.02:  # 2% chance of demand spike
-            #     print(f"Demand spike at time {self.env.now} in Run {run_id}.")
-            #     yield self.env.timeout(0.5)
             
             self.env.process(self.process_product(product_id))
             product_id += 1
@@ -140,24 +133,25 @@ class ManufacturingFacility:
             else:
                 yield self.env.timeout(1)  # Normal speed otherwise
 
-def run_simulation(seed, run_id):
+def run_simulation(seed, run_id, simulation_time):
     np.random.seed(seed)
     env = simpy.Environment()
     facility = ManufacturingFacility(env)
-    env.process(facility.run_simulation(run_id))
-    env.run(until=5000)
+    env.process(facility.run_simulation(run_id, simulation_time))
+    env.run(until=simulation_time)
     
     # Calculate metrics
     results = {
+        'run_id': run_id,
         'production': facility.total_production,
         'rejected': facility.rejected_products,
-        'supplier_occupancy': facility.supplier_busy_time / 5000,
+        'supplier_occupancy': facility.supplier_busy_time / simulation_time,
         'stations': {}
     }
     
     for i, metrics in facility.metrics.items():
         results['stations'][i] = {
-            'occupancy': metrics.busy_time / 5000,
+            'occupancy': metrics.busy_time / simulation_time,
             'downtime': metrics.downtime,
             'avg_fixing_time': np.mean(metrics.fixing_times) if metrics.fixing_times else 0,
             'avg_waiting_time': np.mean(metrics.waiting_times) if metrics.waiting_times else 0,
@@ -166,33 +160,64 @@ def run_simulation(seed, run_id):
     
     return results
 
-# Run multiple simulations with random seeds
-all_results = []
-# Generate random seeds between 1 and 1000000
-random_seeds = np.random.randint(1, 1000000, size=100)
-for run_id, seed in enumerate(random_seeds):
-    result = run_simulation(seed, run_id)
-    all_results.append(result)
+def run_simulation_per_run(num_runs, simulation_time):
+    all_results = []
+    random_seeds = np.random.randint(1, 1000000, size=num_runs)
+    for run_id, seed in enumerate(random_seeds):
+        result = run_simulation(seed, run_id, simulation_time)
+        all_results.append(result)
+    
+    # Print per-run results
+    print("\nPer-Run Simulation Results:")
+    print("-" * 50)
+    for result in all_results:
+        print(f"\nRun {result['run_id']}:")
+        print(f"  Production: {result['production']}")
+        print(f"  Rejected Products: {result['rejected']}")
+        print(f"  Supplier Occupancy: {result['supplier_occupancy']:.3f}")
+        for station in range(6):
+            print(f"  Station {station}:")
+            print(f"    Occupancy Rate: {result['stations'][station]['occupancy']:.3f}")
+            print(f"    Downtime: {result['stations'][station]['downtime']:.2f}")
+            print(f"    Avg Fixing Time: {result['stations'][station]['avg_fixing_time']:.2f}")
+            print(f"    Avg Waiting Time: {result['stations'][station]['avg_waiting_time']:.2f}")
+            print(f"    Avg Bottleneck Delay: {result['stations'][station]['avg_bottleneck_delay']:.2f}")
+    
+    return all_results
 
-# Print summary statistics
-print("\nSimulation Results Summary:")
-print("-" * 50)
+def run_all_runs(num_runs, simulation_time):
+    all_results = []
+    random_seeds = np.random.randint(1, 1000000, size=num_runs)
+    for run_id, seed in enumerate(random_seeds):
+        result = run_simulation(seed, run_id, simulation_time)
+        all_results.append(result)
+    
+    # Print summary statistics
+    print("\nSimulation Results Summary (All Runs):")
+    print("-" * 50)
+    
+    # Calculate averages
+    productions = [r['production'] for r in all_results]
+    rejections = [r['rejected'] for r in all_results]
+    supplier_occs = [r['supplier_occupancy'] for r in all_results]
+    
+    print(f"Average Production per Run: {np.mean(productions):.2f}")
+    print(f"Average Rejection Rate: {np.mean([r/(p+r) for p,r in zip(productions, rejections)]):.3f}")
+    print(f"Average Supplier Occupancy: {np.mean(supplier_occs):.3f}")
+    
+    print("\nWorkstation Statistics (All Runs):")
+    for station in range(6):
+        stats = [r['stations'][station] for r in all_results]
+        print(f"\nStation {station}:")
+        print(f"  Occupancy Rate: {np.mean([s['occupancy'] for s in stats]):.3f}")
+        print(f"  Average Downtime: {np.mean([s['downtime'] for s in stats]):.2f}")
+        print(f"  Average Waiting Time: {np.mean([s['avg_waiting_time'] for s in stats]):.2f}")
+        print(f"  Average Fixing Time: {np.mean([s['avg_fixing_time'] for s in stats]):.2f}")
+        print(f"  Average Bottleneck Delay: {np.mean([s['avg_bottleneck_delay'] for s in stats]):.2f}")
+    
+    return all_results
 
-# Calculate averages
-productions = [r['production'] for r in all_results]
-rejections = [r['rejected'] for r in all_results]
-supplier_occs = [r['supplier_occupancy'] for r in all_results]
-
-print(f"Average Production per Run: {np.mean(productions):.2f}")
-print(f"Average Rejection Rate: {np.mean([r/(p+r) for p,r in zip(productions, rejections)]):.3f}")
-print(f"Average Supplier Occupancy: {np.mean(supplier_occs):.3f}")
-
-print("\nWorkstation Statistics:")
-for station in range(6):
-    stats = [r['stations'][station] for r in all_results]
-    print(f"\nStation {station}:")
-    print(f"  Occupancy Rate: {np.mean([s['occupancy'] for s in stats]):.3f}")
-    print(f"  Average Downtime: {np.mean([s['downtime'] for s in stats]):.2f}")
-    print(f"  Average Waiting Time: {np.mean([s['avg_waiting_time'] for s in stats]):.2f}")
-    print(f"  Average Fixing Time: {np.mean([s['avg_fixing_time'] for s in stats]):.2f}")
-    print(f"  Average Bottleneck Delay: {np.mean([s['avg_bottleneck_delay'] for s in stats]):.2f}")
+# Example usage:
+# Run 5 simulations with 5000 time units each
+# run_simulation_per_run(num_runs=5, simulation_time=5000)
+# run_all_runs(num_runs=100, simulation_time=5000)
