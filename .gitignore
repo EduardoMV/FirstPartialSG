@@ -1,3 +1,4 @@
 # Ignore Lib and scripts folders
 Lib/
 scripts/
+__pycache__/
