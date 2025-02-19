@@ -267,4 +267,4 @@ def run_all_runs(num_runs, simulation_time):
 # Example usage:
 # Run 5 simulations with 5000 time units each
 # run_simulation_per_run(num_runs=5, simulation_time=5000)
-# run_all_runs(num_runs=100, simulation_time=5000)
+run_all_runs(num_runs=100, simulation_time=5000)
